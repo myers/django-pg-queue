@@ -10,9 +10,9 @@ if __name__ == "__main__":
         # The above import may fail for some other reason. Ensure that the
         # issue is really that Django is missing to avoid masking other
         # exceptions on Python 2.
-        try:
-            import django
-        except ImportError:
+        import importlib.util
+
+        if importlib.util.find_spec("django") is None:
             raise ImportError(
                 "Couldn't import Django. Are you sure it's installed and "
                 "available on your PYTHONPATH environment variable? Did you "

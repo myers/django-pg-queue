@@ -82,7 +82,12 @@ class BaseQueue(Generic[_Job], metaclass=abc.ABCMeta):
             job,
             time.time() - start_time,
             retval,
-            extra={"data": {"job": job.to_json(), "retval": retval,}},
+            extra={
+                "data": {
+                    "job": job.to_json(),
+                    "retval": retval,
+                }
+            },
         )
         return retval
 
@@ -114,7 +119,6 @@ class BaseQueue(Generic[_Job], metaclass=abc.ABCMeta):
         kwargs_list: Sequence[Dict[str, Any]],
         batch_size: Optional[int] = None,
     ) -> List[_Job]:
-
         assert task in self.tasks
 
         jobs = self.job_model.objects.bulk_create(
@@ -183,7 +187,13 @@ class BaseQueue(Generic[_Job], metaclass=abc.ABCMeta):
                 )
                 if job:
                     self.logger.debug(
-                        "Claimed %r.", job, extra={"data": {"job": job.to_json(),}}
+                        "Claimed %r.",
+                        job,
+                        extra={
+                            "data": {
+                                "job": job.to_json(),
+                            }
+                        },
                     )
                     return job, self.run_job(job)
                 else:

@@ -5,7 +5,7 @@ from django.test import TestCase
 
 from pgq.decorators import task, JobMeta
 from pgq.models import Job
-from pgq.queue import AtLeastOnceQueue, AtMostOnceQueue, Queue
+from pgq.queue import AtLeastOnceQueue, Queue
 
 
 class PgqDecoratorsTests(TestCase):
