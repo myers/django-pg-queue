@@ -1,8 +1,10 @@
+import fcntl
 import logging
+import os
+import select
 import signal
 import time
 from typing import Any, Optional, Set
-import os
 
 from django.core.management.base import BaseCommand
 from django.db import connection
@@ -16,11 +18,19 @@ class Worker(BaseCommand):
     queue: Optional[Queue] = None
     logger = logging.getLogger(__name__)
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Create self-pipe for signal handling
+        self._signal_pipe_r, self._signal_pipe_w = os.pipe()
+        # Make write end non-blocking
+        flags = fcntl.fcntl(self._signal_pipe_w, fcntl.F_GETFL, 0)
+        fcntl.fcntl(self._signal_pipe_w, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
             "--delay",
             type=float,
-            default=1,
+            default=0.1,
             help="The number of seconds to wait to check for new tasks.",
         )
         parser.add_argument(
@@ -34,7 +44,14 @@ class Worker(BaseCommand):
             self.logger.info("Waiting for active tasks to finish...")
             self._shutdown = True
         else:
-            raise InterruptedError
+            self._shutdown = True
+
+        # Write a byte to the pipe to wake up select()
+        try:
+            os.write(self._signal_pipe_w, b"x")
+        except (OSError, IOError):
+            # Pipe might be full or closed, that's ok
+            pass
 
     def run_available_tasks(self) -> None:
         """
@@ -47,12 +64,15 @@ class Worker(BaseCommand):
             raise PgqNoDefinedQueue
 
         while True:
-            self._in_task = True
             try:
                 job = self.queue.run_once(exclude_ids=failed_tasks)
                 if job is None:
                     # No more jobs
                     return
+
+                # Only set _in_task = True when we actually have a job to process
+                self._in_task = True
+
             except PgqException as e:
                 if e.job is not None:
                     # Make sure we do at least one more iteration of the loop
@@ -67,7 +87,9 @@ class Worker(BaseCommand):
                     failed_tasks.add(failed_job.id)
                 else:
                     raise
-            self._in_task = False
+            finally:
+                # Always clear _in_task flag after processing (or attempting to process)
+                self._in_task = False
             if self._shutdown:
                 raise InterruptedError
 
@@ -75,7 +97,7 @@ class Worker(BaseCommand):
         self._shutdown = False
         self._in_task = False
 
-        self.delay: int = options["delay"]
+        self.delay: float = options["delay"]
         self.listen: bool = options["listen"]
 
         if self.queue is None:
@@ -100,9 +122,49 @@ class Worker(BaseCommand):
 
     def wait(self) -> int:
         if self.listen and self.queue is not None:
-            count = len(self.queue.wait(self.delay))
-            self.logger.debug("Woke up with %s NOTIFYs.", count)
-            return count
+            # Use select with both database connection and signal pipe
+            readable, _, _ = select.select(
+                [connection.connection, self._signal_pipe_r], [], [], self.delay
+            )
+
+            # Check if we got a signal
+            if self._signal_pipe_r in readable:
+                # Clear the pipe
+                try:
+                    os.read(self._signal_pipe_r, 1024)
+                except (OSError, IOError):
+                    pass
+
+                # Check if we should shut down
+                if self._shutdown and not self._in_task:
+                    raise InterruptedError
+                return 0
+
+            # Check for database notifications
+            if connection.connection in readable:
+                connection.connection.poll()
+                notifies = self.queue.filter_notifies()
+                count = len(notifies)
+                self.logger.debug("Woke up with %s NOTIFYs.", count)
+                return count
+
+            # Timeout occurred
+            return 0
         else:
-            time.sleep(self.delay)
+            # When not using LISTEN, use select on just the signal pipe
+            readable, _, _ = select.select([self._signal_pipe_r], [], [], self.delay)
+
+            if self._signal_pipe_r in readable:
+                # Clear the pipe
+                try:
+                    os.read(self._signal_pipe_r, 1024)
+                except (OSError, IOError):
+                    pass
+
+                # Check if we should shut down
+                if self._shutdown and not self._in_task:
+                    raise InterruptedError
+                return 0
+
+            # Timeout - normal wake up to check for tasks
             return 1
