@@ -8,14 +8,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.6, 3.7, 3.8, 3.9]
+        # Django 6.0 requires Python 3.10+
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     # Service containers to run with `container-job`
     services:
       # Label used to access the service container
       postgres:
         # Docker Hub image
-        image: postgres
+        image: postgres:16
         # Provide the password for postgres
         env:
           POSTGRES_USER: pgq
@@ -34,17 +35,16 @@ jobs:
           - 5432:5432
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: psycopg2 prerequisites
         run: sudo apt-get install libpq-dev
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip tox tox-factor
+          python -m pip install --upgrade pip tox tox-gh-actions
       - name: Run tox targets for ${{ matrix.python-version }}
         run: |
-          PYVERSION=$(python -c "import sys; print(''.join([str(sys.version_info.major), str(sys.version_info.minor)]))")
-          python -m tox -f "py${PYVERSION}"
+          python -m tox

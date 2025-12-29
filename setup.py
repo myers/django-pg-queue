@@ -61,8 +61,9 @@ setup(
     author="SweetProcess",
     author_email="support@sweetprocess.com",
     url="https://github.com/SweetProcess/django-pg-queue",
+    python_requires=">=3.10",
     install_requires=[
-        "Django>=2.1",
+        "Django>=6.0",
     ],
     # $ setup.py publish support.
     cmdclass={
