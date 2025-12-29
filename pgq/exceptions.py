@@ -7,17 +7,10 @@ else:
 
 
 class PgqException(Exception):
-    """Base exception for pgq"""
+    """Base exception for pgq task processing errors."""
 
     job: Optional[BaseJob] = None
 
-    def __init__(self, job: Optional[BaseJob] = None):
+    def __init__(self, job: Optional[BaseJob] = None, message: str = ""):
         self.job = job
-
-
-class PgqIncorrectQueue(PgqException):
-    """Job placed on incorrect queue."""
-
-
-class PgqNoDefinedQueue(PgqException):
-    """There is no queue to work."""
+        super().__init__(message)

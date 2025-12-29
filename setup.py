@@ -4,7 +4,7 @@ from shutil import rmtree
 
 from setuptools import setup, Command
 
-VERSION = "0.8.2"
+VERSION = "0.9.0"
 
 HERE = os.path.abspath(os.path.dirname(__file__))
 
@@ -52,6 +52,8 @@ setup(
     packages=[
         "pgq",
         "pgq.migrations",
+        "pgq.management",
+        "pgq.management.commands",
     ],
     package_data={"pgq": ["py.typed"]},
     license="BSD",
@@ -59,8 +61,9 @@ setup(
     author="SweetProcess",
     author_email="support@sweetprocess.com",
     url="https://github.com/SweetProcess/django-pg-queue",
+    python_requires=">=3.12",
     install_requires=[
-        "Django>=2.1",
+        "Django>=6.0",
     ],
     # $ setup.py publish support.
     cmdclass={
