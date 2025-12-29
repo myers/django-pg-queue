@@ -4,7 +4,7 @@ from shutil import rmtree
 
 from setuptools import setup, Command
 
-VERSION = "0.8.2"
+VERSION = "0.9.0"
 
 HERE = os.path.abspath(os.path.dirname(__file__))
 
@@ -52,6 +52,8 @@ setup(
     packages=[
         "pgq",
         "pgq.migrations",
+        "pgq.management",
+        "pgq.management.commands",
     ],
     package_data={"pgq": ["py.typed"]},
     license="BSD",
