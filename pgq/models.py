@@ -32,7 +32,7 @@ _Self = TypeVar("_Self", bound="BaseJob")
 
 
 class BaseJob(models.Model):
-    # Original fields (preserved for backward compatibility)
+    """Base model for task queue jobs compatible with django.tasks API."""
     id = models.BigAutoField(primary_key=True)
     created_at = models.DateTimeField(default=TransactionNow)
     execute_at = models.DateTimeField(default=TransactionNow)
@@ -46,8 +46,6 @@ class BaseJob(models.Model):
         default=DEFAULT_QUEUE_NAME,
         help_text="Use a unique name to represent each queue.",
     )
-
-    # New fields for django.tasks compatibility
     kwargs = JSONField(
         default=dict,
         help_text="Keyword arguments for django.tasks style tasks.",
@@ -106,59 +104,6 @@ class BaseJob(models.Model):
 
     def __str__(self) -> str:
         return "%s: %s" % (self.id, self.task)
-
-    @classmethod
-    def dequeue(
-        cls: Type[_Self],
-        exclude_ids: Optional[Iterable[int]] = None,
-        tasks: Optional[Sequence[str]] = None,
-        queue: str = DEFAULT_QUEUE_NAME,
-    ) -> Optional[_Self]:
-        """
-        Claims the first available task and returns it. If there are no
-        tasks available, returns None.
-
-        exclude_ids: Iterable[int] - excludes jobs with these ids
-        tasks: Optional[Sequence[str]] - filters by jobs with these tasks.
-
-        For at-most-once delivery, commit the transaction before
-        processing the task. For at-least-once delivery, dequeue and
-        finish processing the task in the same transaction.
-
-        To put a job back in the queue, you can just call
-        .save(force_insert=True) on the returned object.
-        """
-
-        WHERE = "WHERE execute_at <= now() AND NOT id = ANY(%s) AND queue = %s"
-        args = [[] if exclude_ids is None else list(exclude_ids), queue]
-        if tasks is not None:
-            WHERE += " AND TASK = ANY(%s)"
-            args.append(tasks)
-
-        jobs = list(
-            cls.objects.raw(
-                """
-            DELETE FROM {db_table}
-            WHERE id = (
-                SELECT id
-                FROM {db_table}
-                {WHERE}
-                ORDER BY priority DESC, created_at
-                FOR UPDATE SKIP LOCKED
-                LIMIT 1
-            )
-            RETURNING *;
-            """.format(
-                    db_table=connection.ops.quote_name(cls._meta.db_table), WHERE=WHERE
-                ),
-                args,
-            )
-        )
-        assert len(jobs) <= 1
-        if jobs:
-            return jobs[0]
-        else:
-            return None
 
     @classmethod
     def claim(
@@ -240,7 +185,7 @@ class BaseJob(models.Model):
         self.save(update_fields=["status", "finished_at", "error_traceback", "error_class"])
 
     def reset_for_retry(self) -> None:
-        """Reset job status to READY for retry (used with AtLeastOnceQueue)."""
+        """Reset job status to READY for retry."""
         self.status = TaskResultStatus.READY
         self.started_at = None
         self.finished_at = None

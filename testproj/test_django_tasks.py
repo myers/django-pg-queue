@@ -1,17 +1,15 @@
 """
-Tests for django.tasks compatible backend and decorators.
+Tests for django.tasks compatible backend.
 
 These tests verify that the PostgresQueueBackend works correctly with
-the django.tasks API, including task definition, enqueueing, status
-tracking, and backward compatibility with legacy pgq tasks.
+the django.tasks API, including task definition, enqueueing, and status
+tracking.
 """
 
-import datetime
 from datetime import timedelta
 from typing import Any, Dict
-from unittest.mock import patch
 
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
 from pgq.backend import (
@@ -22,12 +20,9 @@ from pgq.backend import (
     InvalidTask,
     TaskResultDoesNotExist,
     task,
-    get_task_backend,
     configure_backend,
 )
-from pgq.decorators import legacy_task, migrate_task, LegacyJob, LegacyQueue
 from pgq.models import Job, TaskResultStatus
-from pgq.queue import AtLeastOnceQueue
 
 
 # Test task functions
@@ -450,80 +445,6 @@ class BackendExecutionTests(TransactionTestCase):
         self.assertIsNone(result)
 
 
-class LegacyCompatibilityTests(TestCase):
-    """Tests for backward compatibility with legacy pgq tasks."""
-
-    def setUp(self):
-        self.backend = PostgresQueueBackend(
-            alias="default",
-            options={"queue": "default"}
-        )
-        configure_backend("default", self.backend)
-
-        self.legacy_queue = AtLeastOnceQueue(
-            tasks={},
-            queue="legacy_queue",
-            notify_channel="legacy",
-        )
-
-    def tearDown(self):
-        Job.objects.all().delete()
-
-    def test_legacy_job_from_args_kwargs(self):
-        """LegacyJob correctly wraps args and kwargs."""
-        legacy_job = LegacyJob.from_args_kwargs(
-            args=(1, 2, 3),
-            kwargs={"key": "value"},
-            job_id=42,
-            task_name="test_task",
-        )
-
-        self.assertEqual(legacy_job.id, 42)
-        self.assertEqual(legacy_job.args["args"], [1, 2, 3])
-        self.assertEqual(legacy_job.args["kwargs"], {"key": "value"})
-        self.assertEqual(legacy_job.task, "test_task")
-
-    def test_legacy_queue_enqueue(self):
-        """LegacyQueue can enqueue tasks via backend."""
-        legacy_queue = LegacyQueue(
-            queue_name="test",
-            backend_alias="default",
-        )
-
-        # This will create a job via the backend
-        result = legacy_queue.enqueue("test_task", {"data": "value"})
-
-        self.assertIsInstance(result, TaskResult)
-        self.assertEqual(Job.objects.count(), 1)
-
-    def test_legacy_task_decorator(self):
-        """@legacy_task wraps old-style tasks for django.tasks backend."""
-        @legacy_task(self.legacy_queue)
-        def old_style_task(queue, job):
-            return job.args.get("value", 0) * 2
-
-        # The decorator should return a Task object
-        self.assertIsInstance(old_style_task, Task)
-
-        # Enqueue should work
-        result = old_style_task.enqueue(value=21)
-        self.assertIsInstance(result, TaskResult)
-        self.assertEqual(Job.objects.count(), 1)
-
-    def test_migrate_task_decorator(self):
-        """@migrate_task creates new-style tasks from legacy queue."""
-        @migrate_task(self.legacy_queue, priority=15)
-        def new_style_task(x, y):
-            return x + y
-
-        self.assertIsInstance(new_style_task, Task)
-        self.assertEqual(new_style_task.priority, 15)
-        self.assertEqual(new_style_task.queue_name, "legacy_queue")
-
-        result = new_style_task.enqueue(10, 20)
-        self.assertIsInstance(result, TaskResult)
-
-
 class TaskResultTests(TestCase):
     """Tests for TaskResult properties."""
 
@@ -584,7 +505,7 @@ class JobToJsonTests(TestCase):
     """Tests for Job.to_json() with new fields."""
 
     def test_to_json_includes_new_fields(self):
-        """to_json() includes all new django.tasks fields."""
+        """to_json() includes all django.tasks fields."""
         job = Job.objects.create(
             task="test_task",
             args=[1, 2, 3],
